@@ -1,17 +1,21 @@
 from database.parco_DAO import ParcoDAO
 from database.escursione_DAO import EscursioneDAO
 from database.punto_interesse_DAO import PuntoInteresseDAO
+from model import escursione, punto_interesse
+
 
 class Model:
     def __init__(self):
-        self.escursioni_map = {} # Mappa ID escursione -> oggetti Escursione
-        self.punti_interesse_map = {} # Mappa ID punto di interesse -> oggetti PuntoInteresse
-
+        self._max_budget = None
+        self._max_giorni = None
+        self.escursioni_map = {}
+        self.punti_interesse_map = {}
         self._pacchetto_ottimo = []
         self._valore_ottimo: int = -1
         self._costo = 0
+        self._escursioni_parco = []
 
-        # TODO: Aggiungere eventuali altri attributi
+
 
         # Caricamento
         self.load_escursioni()
@@ -38,7 +42,16 @@ class Model:
             --> Ogni Escursione ha un set di PuntoInteresse.
             --> Ogni PuntoInteresse ha un set di Escursioni.
         """
-        # TODO
+        relazione = EscursioneDAO.get_escursioni_punti_interesse()
+        for r in relazione:
+            escursioni = self.escursioni_map[r['id_escursione']]
+            punti_interesse = self.punti_interesse_map[r['id_punto_interesse']]
+            escursioni.punti_interesse.add(punti_interesse)
+            punti_interesse.escursioni.add(escursioni)
+
+
+
+
 
     def genera_pacchetto(self, id_parco: str, max_giorni: int = None, max_budget: float = None):
         """
@@ -54,12 +67,73 @@ class Model:
         self._pacchetto_ottimo = []
         self._costo = 0
         self._valore_ottimo = -1
+        self._escursioni_parco = []
+        for e in self.escursioni_map.values():
+            if e.id_parco == id_parco:
+                self._escursioni_parco.append(e)
 
-        # TODO
+
+        self._max_giorni = max_giorni
+        self._max_budget = max_budget
+        self._ricorsione(0,[],0,0, 0, set())
+
+
 
         return self._pacchetto_ottimo, self._costo, self._valore_ottimo
 
-    def _ricorsione(self, start_index: int, pacchetto_parziale: list, durata_corrente: int, costo_corrente: float, valore_corrente: int, punti_usati: set):
-        """ Algoritmo di ricorsione che deve trovare il pacchetto che massimizza il voto complessivo dei visitatori"""
+    def _is_valid(self, esc, durata_corrente, costo_corrente, punti_usati):
+        if self._max_giorni is not None:
+            if durata_corrente + esc.durata_giorni > self._max_giorni:
+                return False
+        if self._max_budget is not None:
+            if costo_corrente + esc.costo > self._max_budget:
+                return False
+        for punto in esc.punti_interesse:
+            if punto in punti_usati:
+                return False
+        return True
 
-        # TODO: è possibile cambiare i parametri formali della funzione se ritenuto opportuno
+
+    def _ricorsione(self,start_index: int, pacchetto_parziale: list, durata_corrente: int, costo_corrente: float, valore_corrente: int, punti_usati: set):
+        """ Algoritmo di ricorsione che deve trovare il pacchetto che massimizza il voto complessivo dei visitatori"""
+        if valore_corrente > self._valore_ottimo :
+            self._valore_ottimo = valore_corrente
+            self._costo = costo_corrente
+            self._pacchetto_ottimo = pacchetto_parziale.copy()
+
+        if start_index == len(self._escursioni_parco) :
+            return
+
+        else:
+            for i in range (start_index, len(self._escursioni_parco)):
+                esc = self._escursioni_parco[i]
+                if self._is_valid(esc, durata_corrente, costo_corrente, punti_usati):
+                    valore_aggiunto = 0
+                    for punto in esc.punti_interesse:
+                        valore_aggiunto += punto.voto_visitatori
+                    nuova_durata = durata_corrente + esc.durata_giorni
+                    nuovo_costo = costo_corrente + esc.costo
+                    nuovo_valore = valore_corrente + valore_aggiunto
+
+                    pacchetto_parziale.append(esc)
+                    for punto in esc.punti_interesse:
+                        punti_usati.add(punto)
+
+                    self._ricorsione(
+                        i + 1,
+                        pacchetto_parziale,
+                        nuova_durata,
+                        nuovo_costo,
+                        nuovo_valore,
+                        punti_usati
+                    )
+                    pacchetto_parziale.pop()
+                    for punto in esc.punti_interesse:
+                        punti_usati.remove(punto)
+
+
+
+
+
+
+
